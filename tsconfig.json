@@ -8,10 +8,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true,
-    "paths": {
-      "react-native-mesh-sdk": ["../react-native-mesh-sdk/src/index.ts"]
-    }
+    "allowSyntheticDefaultImports": true
   },
   "include": ["App.tsx", "src", "index.js"]
 }
