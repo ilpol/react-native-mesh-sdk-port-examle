@@ -1,29 +1,17 @@
 # Mesh Chat — example app
 
-> **Prerequisite:** this app consumes the library from a **sibling folder**.
-> Clone [`react-native-mesh-sdk`](https://github.com/) into the *same parent
-> directory* as this repo, so the layout is:
->
-> ```
-> <parent>/
->   react-native-mesh-sdk/     # the library
->   mesh-chat-example/         # this app  (references ../react-native-mesh-sdk)
-> ```
->
-> The relative path `../react-native-mesh-sdk` is wired into `metro.config.js`,
-> `react-native.config.js`, `tsconfig.json` and the iOS project.
-
-A BitChat-style React Native client built entirely on `react-native-mesh-sdk`.
-It demonstrates the same core UX as the native bitchat-android / bitchat-ios
-apps:
+A BitChat‑style React Native client built entirely on the published
+[`react-native-mesh-sdk`](https://www.npmjs.com/package/react-native-mesh-sdk)
+package. It demonstrates the same core UX as the native bitchat‑android /
+bitchat‑ios apps:
 
 - **Nickname onboarding** before joining the mesh
 - **Public mesh chat** — broadcast messages to every nearby peer
 - **Peer drawer** — live peer list with connection dot, 🔒 encryption badge, RSSI
-- **Private chats** — tap a peer for an end-to-end (Noise) encrypted conversation
+- **Private chats** — tap a peer for an end‑to‑end (Noise) encrypted conversation
 - **Delivery receipts** — sending / sent / delivered / read glyphs
 
-The meaningful code is cross-platform TypeScript:
+The app is plain cross‑platform TypeScript:
 
 | File | Role |
 |------|------|
@@ -31,80 +19,36 @@ The meaningful code is cross-platform TypeScript:
 | `src/useMesh.ts` | The single hook driving the mesh (BitChat's `ChatViewModel` equivalent) |
 | `src/components/*` | `MessageBubble`, `MessageInput`, `PeerList` |
 
+> Bluetooth mesh needs **two physical devices** — the simulator/emulator has no
+> BLE radio.
+
 ## Run
 
-This folder only contains the JS/TS app + config. Generate the native
-iOS/Android host projects once, then autolinking wires up the SDK:
+```bash
+npm install          # pulls react-native-mesh-sdk from npm
+```
+
+### Android
 
 ```bash
-# from example/
-npm install
-
-# iOS — pod install + wire the Core & SwiftPM packages into the app target
-npm run setup-ios
-npm run ios        # simulator build must be arm64 (Apple Silicon)
-
-# Android
 npm run android
 ```
 
-> iOS build details (SwiftPM packages, arm64-only simulator, bundle id, Xcode-26
-> debug dylib) are documented in the top-level [README](../react-native-mesh-sdk/README.md#ios-integration).
-> Re-run `npm run setup-ios` after any `npm run sync-core`.
+The SDK **autolinks** — nothing else to wire. Runtime Bluetooth/location
+permissions are requested by `src/useMesh.ts`; the manifest permissions come
+from the library. `minSdk 26+`.
 
-> The example consumes the library straight from `..`: `react-native.config.js`
-> points **autolinking** at the parent, and `metro.config.js` points **Metro**
-> there (and excludes the vendored `android/core` + `ios/core` from the file
-> map). So edits to the SDK hot-reload here — no publish / npm link needed.
+### iOS
 
-### Android Studio can't find `node` (nvm users)
-
-If the IDE build fails with `A problem occurred starting process 'command 'node''`
-/ `Cannot run program "node"`, it's because Android Studio (launched from the
-Dock) gets a minimal `PATH` from `launchd` (`/usr/bin:/bin:/usr/sbin:/sbin`)
-that excludes nvm's node. RN's autolinking (`native_modules.gradle`) calls
-`node` by bare name, so it must be on the **GUI** `PATH`. Note: `/etc/paths`
-(incl. `/usr/local/bin`) only affects *shells*, not GUI apps — so a symlink
-alone isn't enough.
-
-**Option A — permanent, works from the Dock (recommended).** Symlink node into
-`/usr/local/bin`, then add that dir to the launchd GUI PATH and reboot:
+iOS is **not** a CocoaPods autolink — the SDK vendors the bitchat‑ios Core +
+SwiftPM packages, which a script wires into the app target:
 
 ```bash
-sudo ln -sf "$(which node)" /usr/local/bin/node
-sudo ln -sf "$(which npm)"  /usr/local/bin/npm
-sudo launchctl config user path "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-# → reboot, then Sync in Android Studio
+npm run setup-ios    # = pod install + node_modules/react-native-mesh-sdk/scripts/setup-ios.rb
+npm run ios          # simulator build must be arm64 (Apple Silicon)
 ```
 
-**Option B — no reboot.** Quit Android Studio, then launch its binary from a
-terminal that has node on `PATH` (the Gradle daemon inherits that env):
-
-```bash
-cd android && JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --stop
-source ~/.zshrc
-"/Applications/Android Studio.app/Contents/MacOS/studio" >/dev/null 2>&1 &
-```
-
-> `open -a "Android Studio"` does NOT pass the env — launch the binary directly.
-> Re-run the node symlink if you switch node versions with nvm. CLI builds via
-> `npm run android` already work (the terminal has nvm on `PATH`).
-
-### Metro / watchman note
-
-On macOS, Metro needs **watchman** (`brew install watchman`); without it the
-bundler throws `EMFILE: too many open files`. If watchman fails to start with a
-`~/.local/state/watchman … Permission denied` error (that dir is root-owned on
-some machines), either:
-
-```bash
-sudo chown -R "$USER" ~/.local/state           # one-time fix, or
-export XDG_STATE_HOME=/tmp/wm                   # per-shell redirect
-```
-
-## Native setup checklist
-
-**iOS** — add to `ios/MeshChatExample/Info.plist`:
+`Info.plist` already contains the required keys:
 
 ```xml
 <key>NSBluetoothAlwaysUsageDescription</key>
@@ -115,11 +59,50 @@ export XDG_STATE_HOME=/tmp/wm                   # per-shell redirect
 <array><string>bluetooth-central</string><string>bluetooth-peripheral</string></array>
 ```
 
-Also add the vendored SwiftPM packages from `../react-native-mesh-sdk/ios/core/localPackages`
-(`BitFoundation`, `BitLogger`) to the app target.
+Deep iOS details (SwiftPM packages, arm64‑only simulator, Xcode‑26 debug dylib)
+are in the library's
+[README → iOS integration](https://github.com/ilpol/react-native-mesh-sdk-port#ios-integration).
+Re‑run `npm run setup-ios` after upgrading the SDK.
 
-**Android** — runtime permissions are requested by `useMesh.ts`; the manifest
-permissions are provided by the library and merged automatically. `minSdk 26+`.
+---
 
-> Bluetooth mesh needs **two physical devices** — the simulator/emulator has no
-> BLE radio.
+## Troubleshooting (macOS)
+
+### Android Studio can't find `node` (nvm users)
+
+If the IDE build fails with `Cannot run program "node"`, Android Studio (from the
+Dock) gets a minimal `PATH` from `launchd` that excludes nvm's node, and RN's
+autolinking calls `node` by bare name. Fix (permanent, works from the Dock):
+
+```bash
+sudo ln -sf "$(which node)" /usr/local/bin/node
+sudo ln -sf "$(which npm)"  /usr/local/bin/npm
+sudo launchctl config user path "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# → reboot, then Sync in Android Studio
+```
+
+No‑reboot alternative: quit Android Studio and launch its binary from a terminal
+that has node on `PATH` (`"/Applications/Android Studio.app/Contents/MacOS/studio" &`).
+CLI builds via `npm run android` already work (the terminal has nvm on `PATH`).
+
+### Metro / watchman
+
+Metro needs **watchman** (`brew install watchman`); without it the bundler throws
+`EMFILE: too many open files`. If watchman can't start with a
+`~/.local/state/watchman … Permission denied` error (root‑owned on some
+machines):
+
+```bash
+sudo chown -R "$USER" ~/.local/state    # one-time fix, or
+export XDG_STATE_HOME=/tmp/wm           # per-shell redirect
+```
+
+The same values are set for Xcode build phases in `ios/.xcode.env.local`
+(gitignored — machine specific).
+
+### "Unable to load script" on device
+
+Debug builds load JS from Metro. Start it (`npm start`) and, for a USB device,
+run `adb reverse tcp:8081 tcp:8081`. For hassle‑free two‑device testing, build a
+standalone release APK (`cd android && ./gradlew assembleRelease`) — the JS is
+embedded, no Metro needed.
