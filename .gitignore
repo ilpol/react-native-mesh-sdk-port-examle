@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────
+# MeshChatExample — React Native app that consumes react-native-mesh-sdk.
+#
+# PREREQUISITE: clone the `react-native-mesh-sdk` repo into the SAME parent
+# folder as this one (they reference each other by the relative path
+# ../react-native-mesh-sdk — see metro.config.js / react-native.config.js).
+# ─────────────────────────────────────────────────────────────
+
+# Dependencies
+node_modules/
+# Lockfiles ARE committed (package-lock.json, ios/Podfile.lock) — do not ignore.
+
+# Metro / JS
+.metro-health-check*
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.expo/
+
+# Android
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/.cxx/
+android/local.properties
+*.iml
+*.hprof
+*.jks
+release.keystore
+
+# iOS / Xcode
+ios/Pods/
+ios/build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.hmap
+*.ipa
+# Machine-specific NODE_BINARY / watchman / PATH overrides (per RN convention).
+ios/.xcode.env.local
+
+# OS / editors
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
