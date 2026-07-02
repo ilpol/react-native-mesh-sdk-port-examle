@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -7,11 +8,13 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { MeshSdk } from 'react-native-mesh-sdk';
 import type { MeshMessage, MeshPeer } from 'react-native-mesh-sdk';
 import { useMesh } from './src/useMesh';
 import { MessageBubble } from './src/components/MessageBubble';
@@ -48,7 +51,7 @@ function Onboarding({ onDone }: { onDone: (nick: string) => void }) {
 }
 
 function Chat({ nickname }: { nickname: string }) {
-  const { state, sendPublic, sendPrivate, warmUpSession } = useMesh(nickname);
+  const { state, sendPublic, sendPrivate, warmUpSession, clearHistory, setNotificationsEnabled } = useMesh(nickname);
   const [activePeer, setActivePeer] = useState<MeshPeer | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
@@ -57,6 +60,11 @@ function Chat({ nickname }: { nickname: string }) {
     if (activePeer) return state.privateMessages[activePeer.peerID] ?? [];
     return state.publicMessages;
   }, [activePeer, state.privateMessages, state.publicMessages]);
+
+  // Tell the SDK which chat is open so it won't notify for the one on screen.
+  useEffect(() => {
+    MeshSdk.setActiveChatPeer(activePeer?.peerID ?? null).catch(() => {});
+  }, [activePeer]);
 
   const title = activePeer ? `@${activePeer.nickname}` : '#public mesh';
   const btState = state.bluetoothState;
@@ -79,6 +87,31 @@ function Chat({ nickname }: { nickname: string }) {
         <Text style={styles.me}>{state.nickname}</Text>
       </View>
 
+      {/* Prompt the user to turn Bluetooth on — the mesh can't run without it. */}
+      {(btState === 'poweredOff' || btState === 'unauthorized') && (
+        <TouchableOpacity
+          style={styles.btBanner}
+          onPress={() => {
+            MeshSdk.enableBluetooth().then((enabled) => {
+              if (!enabled) {
+                Alert.alert(
+                  'Bluetooth is off',
+                  Platform.OS === 'ios'
+                    ? 'Turn Bluetooth on in Control Center or Settings to use the mesh.'
+                    : 'Turn Bluetooth on to use the mesh.'
+                );
+              }
+            });
+          }}
+        >
+          <Text style={styles.btBannerText}>
+            {btState === 'unauthorized'
+              ? '⚠ Bluetooth permission needed — tap to open settings'
+              : '⚠ Bluetooth is off — tap to turn it on'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {showDebug && (
         <ScrollView style={styles.debugBox} contentContainerStyle={{ padding: 10 }}>
           <Text selectable style={styles.debugText}>
@@ -86,6 +119,17 @@ function Chat({ nickname }: { nickname: string }) {
             ready: {String(state.ready)}{'\n'}
             {state.debug}
           </Text>
+          <TouchableOpacity
+            style={styles.clearBtn}
+            onPress={() =>
+              Alert.alert('Clear history?', 'This deletes all stored messages on this device.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Clear', style: 'destructive', onPress: () => clearHistory() },
+              ])
+            }
+          >
+            <Text style={styles.clearBtnText}>clear history</Text>
+          </TouchableOpacity>
         </ScrollView>
       )}
 
@@ -103,6 +147,14 @@ function Chat({ nickname }: { nickname: string }) {
                 warmUpSession(p.peerID);
               }}
             />
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>notifications</Text>
+              <Switch
+                value={state.notificationsEnabled}
+                onValueChange={setNotificationsEnabled}
+                trackColor={{ true: theme.accent, false: theme.border }}
+              />
+            </View>
           </View>
         )}
 
@@ -147,6 +199,8 @@ const styles = StyleSheet.create({
   body: { flex: 1, flexDirection: 'row' },
   chat: { flex: 1 },
   drawer: { width: '62%', borderRightWidth: 1, borderRightColor: theme.border },
+  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: theme.border },
+  settingLabel: { color: theme.text, fontFamily: theme.mono, fontSize: 13 },
 
   header: {
     flexDirection: 'row',
@@ -165,8 +219,13 @@ const styles = StyleSheet.create({
   subtitle: { color: theme.textMuted, fontFamily: theme.mono, fontSize: 11 },
   me: { color: theme.textDim, fontFamily: theme.mono, fontSize: 12 },
 
+  btBanner: { backgroundColor: '#5a1e1e', paddingVertical: 8, paddingHorizontal: 12 },
+  btBannerText: { color: '#ffd7d7', fontFamily: theme.mono, fontSize: 12, textAlign: 'center' },
+
   debugBox: { maxHeight: 220, backgroundColor: '#050505', borderBottomWidth: 1, borderBottomColor: theme.border },
   debugText: { color: theme.textDim, fontFamily: theme.mono, fontSize: 10 },
+  clearBtn: { marginTop: 10, alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#7a2e2e', borderRadius: 4 },
+  clearBtnText: { color: '#ff8a8a', fontFamily: theme.mono, fontSize: 11 },
 
   empty: { color: theme.textMuted, fontFamily: theme.mono, textAlign: 'center', fontSize: 13 },
   emptyWrap: { flexGrow: 1, justifyContent: 'center' },

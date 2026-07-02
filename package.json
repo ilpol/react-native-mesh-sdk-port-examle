@@ -10,6 +10,7 @@
     "setup-ios": "cd ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install && ruby ../node_modules/react-native-mesh-sdk/scripts/setup-ios.rb \"$(pwd)/MeshChatExample.xcodeproj\""
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^1.24.0",
     "react": "18.2.0",
     "react-native": "0.74.5",
     "react-native-mesh-sdk": "^1.2.0"

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, PermissionsAndroid } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   MeshSdk,
   type MeshMessage,
@@ -7,12 +8,44 @@ import {
   type BluetoothState,
 } from 'react-native-mesh-sdk';
 
+// ---- Persistent history --------------------------------------------------
+// Core BitChat is ephemeral by design (it never stores messages), so the app
+// owns history. We persist the message log to AsyncStorage and rehydrate it on
+// launch, capped so it can't grow without bound.
+const STORE_PUBLIC = 'mesh:publicMessages';
+const STORE_PRIVATE = 'mesh:privateMessages';
+const STORE_NOTIF = 'mesh:notificationsEnabled';
+const MAX_PUBLIC = 500; // keep the newest N public messages
+const MAX_PER_PRIVATE = 300; // keep the newest N per conversation
+
+async function loadHistory(): Promise<{
+  publicMessages: MeshMessage[];
+  privateMessages: Record<string, MeshMessage[]>;
+}> {
+  try {
+    const [pub, priv] = await AsyncStorage.multiGet([STORE_PUBLIC, STORE_PRIVATE]);
+    return {
+      publicMessages: pub[1] ? (JSON.parse(pub[1]) as MeshMessage[]) : [],
+      privateMessages: priv[1]
+        ? (JSON.parse(priv[1]) as Record<string, MeshMessage[]>)
+        : {},
+    };
+  } catch {
+    return { publicMessages: [], privateMessages: {} };
+  }
+}
+
 // This example runs on its OWN mesh network — a custom BLE service/characteristic
 // UUID pair, distinct from the SDK default. Every device running this app shares
 // it, and it stays isolated from any other react-native-mesh-sdk app. Demonstrates
 // MeshSdk.setMeshId(). ("4D455348" = "MESH" in ASCII.)
 const MESH_SERVICE_UUID = '4D455348-0000-4000-8000-00000000C0DE';
 const MESH_CHARACTERISTIC_UUID = '4D455348-0000-4000-8000-00000000DA7A';
+
+// In-code toggle for local notifications on incoming private messages. Flip to
+// `false` to disable them entirely. (They also require the POST_NOTIFICATIONS
+// runtime permission on Android 13+.)
+const NOTIFICATIONS_ENABLED = true;
 
 /**
  * Requests the runtime Bluetooth/location permissions Core BitChat needs.
@@ -64,6 +97,8 @@ export interface MeshState {
   /** Private messages keyed by the other peer's id. */
   privateMessages: Record<string, MeshMessage[]>;
   bluetoothState: BluetoothState;
+  /** Whether local DM notifications are enabled (user-toggleable). */
+  notificationsEnabled: boolean;
   /** Live diagnostics for troubleshooting the mesh. */
   debug: string;
 }
@@ -82,10 +117,14 @@ export function useMesh(initialNickname: string) {
     publicMessages: [],
     privateMessages: {},
     bluetoothState: 'unknown',
+    notificationsEnabled: NOTIFICATIONS_ENABLED,
     debug: 'init…',
   });
 
   const nicknameRef = useRef(initialNickname);
+  // Don't persist until we've rehydrated, or the initial empty state would
+  // clobber the stored history before it loads.
+  const hydratedRef = useRef(false);
 
   const upsertPrivate = useCallback((peerID: string, msg: MeshMessage) => {
     setState((s) => {
@@ -134,6 +173,27 @@ export function useMesh(initialNickname: string) {
 
     (async () => {
       try {
+        // Rehydrate persisted history first, merging with anything that may have
+        // arrived while we were loading (history first, live messages appended).
+        const hist = await loadHistory();
+        if (mounted) {
+          setState((s) => {
+            const seenPub = new Set(s.publicMessages.map((m) => m.id));
+            const publicMessages = [
+              ...hist.publicMessages.filter((m) => !seenPub.has(m.id)),
+              ...s.publicMessages,
+            ];
+            const privateMessages: Record<string, MeshMessage[]> = { ...hist.privateMessages };
+            for (const [k, list] of Object.entries(s.privateMessages)) {
+              const base = privateMessages[k] ?? [];
+              const seen = new Set(base.map((m) => m.id));
+              privateMessages[k] = [...base, ...list.filter((m) => !seen.has(m.id))];
+            }
+            return { ...s, publicMessages, privateMessages };
+          });
+        }
+        hydratedRef.current = true;
+
         const ok = await ensurePermissions();
         if (!ok) {
           if (mounted) setState((s) => ({ ...s, debug: 'PERMISSIONS DENIED' }));
@@ -142,6 +202,11 @@ export function useMesh(initialNickname: string) {
         // Pick our own mesh network BEFORE anything starts the BLE stack.
         await MeshSdk.setMeshId(MESH_SERVICE_UUID, MESH_CHARACTERISTIC_UUID);
         await MeshSdk.setNickname(nicknameRef.current);
+        // Restore the saved notifications preference (defaults to the in-code flag).
+        const savedNotif = await AsyncStorage.getItem(STORE_NOTIF);
+        const notifEnabled = savedNotif == null ? NOTIFICATIONS_ENABLED : savedNotif === '1';
+        await MeshSdk.setNotificationsEnabled(notifEnabled);
+        if (mounted) setState((s) => ({ ...s, notificationsEnabled: notifEnabled }));
         await MeshSdk.startServices();
         const myPeerID = await MeshSdk.getMyPeerID();
         const peers = await MeshSdk.getPeers();
@@ -172,7 +237,35 @@ export function useMesh(initialNickname: string) {
     };
   }, [upsertPrivate]);
 
+  // ---- Persist history on every change (after rehydration) ---------------
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    const capped = state.publicMessages.slice(-MAX_PUBLIC);
+    const cappedPrivate: Record<string, MeshMessage[]> = {};
+    for (const [k, list] of Object.entries(state.privateMessages)) {
+      cappedPrivate[k] = list.slice(-MAX_PER_PRIVATE);
+    }
+    AsyncStorage.multiSet([
+      [STORE_PUBLIC, JSON.stringify(capped)],
+      [STORE_PRIVATE, JSON.stringify(cappedPrivate)],
+    ]).catch(() => {});
+  }, [state.publicMessages, state.privateMessages]);
+
   // ---- Actions -----------------------------------------------------------
+
+  /** Toggle local notifications; persists the choice and updates the SDK. */
+  const setNotificationsEnabled = useCallback(async (enabled: boolean) => {
+    setState((s) => ({ ...s, notificationsEnabled: enabled }));
+    await AsyncStorage.setItem(STORE_NOTIF, enabled ? '1' : '0').catch(() => {});
+    await MeshSdk.setNotificationsEnabled(enabled).catch(() => {});
+  }, []);
+
+  /** Wipe the persisted + in-memory history (e.g. a "clear chat" action). */
+  const clearHistory = useCallback(async () => {
+    hydratedRef.current = true;
+    await AsyncStorage.multiRemove([STORE_PUBLIC, STORE_PRIVATE]).catch(() => {});
+    setState((s) => ({ ...s, publicMessages: [], privateMessages: {} }));
+  }, []);
 
   const sendPublic = useCallback(
     async (content: string) => {
@@ -244,5 +337,5 @@ export function useMesh(initialNickname: string) {
     await MeshSdk.sendReadReceipt(messageID, peerID, nicknameRef.current);
   }, []);
 
-  return { state, sendPublic, sendPrivate, setNickname, markRead, warmUpSession };
+  return { state, sendPublic, sendPrivate, setNickname, markRead, warmUpSession, clearHistory, setNotificationsEnabled };
 }
