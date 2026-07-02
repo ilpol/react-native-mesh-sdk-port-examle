@@ -10,6 +10,14 @@ bitchat‑ios apps:
 - **Peer drawer** — live peer list with connection dot, 🔒 encryption badge, RSSI
 - **Private chats** — tap a peer for an end‑to‑end (Noise) encrypted conversation
 - **Delivery receipts** — sending / sent / delivered / read glyphs
+- **Persistent history** — messages are saved with AsyncStorage and rehydrated on
+  launch (the SDK/Core is ephemeral, so the app owns storage). "clear history"
+  in the debug panel wipes it.
+- **Notifications toggle** — an on/off switch in the drawer for incoming‑DM
+  notifications (persisted between launches)
+- **Bluetooth banner** — a tap‑to‑enable prompt when Bluetooth is off
+- **Private network** — runs on its own BLE UUID pair via `MeshSdk.setMeshId`,
+  isolated from other deployments
 
 The app is plain cross‑platform TypeScript:
 
