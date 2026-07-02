@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -51,7 +52,7 @@ function Onboarding({ onDone }: { onDone: (nick: string) => void }) {
 }
 
 function Chat({ nickname }: { nickname: string }) {
-  const { state, sendPublic, sendPrivate, warmUpSession, clearHistory, setNotificationsEnabled } = useMesh(nickname);
+  const { state, sendPublic, sendPrivate, warmUpSession, clearHistory, setNotificationsEnabled, setPublicNotificationsEnabled } = useMesh(nickname);
   const [activePeer, setActivePeer] = useState<MeshPeer | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
@@ -69,7 +70,21 @@ function Chat({ nickname }: { nickname: string }) {
   const title = activePeer ? `@${activePeer.nickname}` : '#public mesh';
   const btState = state.bluetoothState;
 
+  const listRef = useRef<FlatList<MeshMessage>>(null);
+
+  // Track keyboard visibility so iOS can show a "hide keyboard" affordance.
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardUp(true));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardUp(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
   return (
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={theme.bg} />
 
@@ -148,24 +163,32 @@ function Chat({ nickname }: { nickname: string }) {
               }}
             />
             <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>notifications</Text>
+              <Text style={styles.settingLabel}>private notifications</Text>
               <Switch
+                style={styles.switch}
                 value={state.notificationsEnabled}
                 onValueChange={setNotificationsEnabled}
+                trackColor={{ true: theme.accent, false: theme.border }}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>public notifications</Text>
+              <Switch
+                style={styles.switch}
+                value={state.publicNotificationsEnabled}
+                onValueChange={setPublicNotificationsEnabled}
                 trackColor={{ true: theme.accent, false: theme.border }}
               />
             </View>
           </View>
         )}
 
-        <KeyboardAvoidingView
-          style={styles.chat}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-        >
+        <View style={styles.chat}>
           <FlatList
+            ref={listRef}
             data={messages}
             keyExtractor={(m) => m.id}
+            keyboardDismissMode="interactive"
             renderItem={({ item }) => (
               <MessageBubble message={item} mine={item.senderPeerID === state.myPeerID || item.sender === state.nickname} />
             )}
@@ -175,16 +198,25 @@ function Chat({ nickname }: { nickname: string }) {
               </Text>
             }
             contentContainerStyle={messages.length === 0 && styles.emptyWrap}
+            // Keep the newest message in view when one arrives (or on chat switch).
+            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           />
+          {/* iOS keyboard has no dismiss key — offer one while it's open. */}
+          {Platform.OS === 'ios' && keyboardUp && (
+            <TouchableOpacity style={styles.kbDismiss} onPress={() => Keyboard.dismiss()}>
+              <Text style={styles.kbDismissText}>⌄ hide keyboard</Text>
+            </TouchableOpacity>
+          )}
           <MessageInput
             placeholder={activePeer ? `message @${activePeer.nickname}` : 'message the mesh'}
             onSend={(text) =>
               activePeer ? sendPrivate(activePeer.peerID, activePeer.nickname, text) : sendPublic(text)
             }
           />
-        </KeyboardAvoidingView>
+        </View>
       </View>
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -195,12 +227,17 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: theme.bg },
   root: { flex: 1, backgroundColor: theme.bg },
   body: { flex: 1, flexDirection: 'row' },
   chat: { flex: 1 },
+  kbDismiss: { alignSelf: 'center', paddingVertical: 4, paddingHorizontal: 14, marginBottom: 2 },
+  kbDismissText: { color: theme.textMuted, fontFamily: theme.mono, fontSize: 12 },
   drawer: { width: '62%', borderRightWidth: 1, borderRightColor: theme.border },
-  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: theme.border },
-  settingLabel: { color: theme.text, fontFamily: theme.mono, fontSize: 13 },
+  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: theme.border },
+  settingLabel: { flex: 1, color: theme.text, fontFamily: theme.mono, fontSize: 12, marginRight: 8 },
+  // iOS switches are chunkier than Android's — scale them down so the row fits the drawer.
+  switch: Platform.OS === 'ios' ? { transform: [{ scale: 0.75 }] } : {},
 
   header: {
     flexDirection: 'row',

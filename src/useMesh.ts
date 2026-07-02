@@ -15,6 +15,7 @@ import {
 const STORE_PUBLIC = 'mesh:publicMessages';
 const STORE_PRIVATE = 'mesh:privateMessages';
 const STORE_NOTIF = 'mesh:notificationsEnabled';
+const STORE_PUBLIC_NOTIF = 'mesh:publicNotificationsEnabled';
 const MAX_PUBLIC = 500; // keep the newest N public messages
 const MAX_PER_PRIVATE = 300; // keep the newest N per conversation
 
@@ -46,6 +47,8 @@ const MESH_CHARACTERISTIC_UUID = '4D455348-0000-4000-8000-00000000DA7A';
 // `false` to disable them entirely. (They also require the POST_NOTIFICATIONS
 // runtime permission on Android 13+.)
 const NOTIFICATIONS_ENABLED = true;
+// Public-broadcast notifications default OFF (a busy mesh can be noisy).
+const PUBLIC_NOTIFICATIONS_ENABLED = false;
 
 /**
  * Requests the runtime Bluetooth/location permissions Core BitChat needs.
@@ -99,6 +102,8 @@ export interface MeshState {
   bluetoothState: BluetoothState;
   /** Whether local DM notifications are enabled (user-toggleable). */
   notificationsEnabled: boolean;
+  /** Whether notifications for public broadcasts are enabled (user-toggleable). */
+  publicNotificationsEnabled: boolean;
   /** Live diagnostics for troubleshooting the mesh. */
   debug: string;
 }
@@ -118,6 +123,7 @@ export function useMesh(initialNickname: string) {
     privateMessages: {},
     bluetoothState: 'unknown',
     notificationsEnabled: NOTIFICATIONS_ENABLED,
+    publicNotificationsEnabled: PUBLIC_NOTIFICATIONS_ENABLED,
     debug: 'init…',
   });
 
@@ -202,11 +208,13 @@ export function useMesh(initialNickname: string) {
         // Pick our own mesh network BEFORE anything starts the BLE stack.
         await MeshSdk.setMeshId(MESH_SERVICE_UUID, MESH_CHARACTERISTIC_UUID);
         await MeshSdk.setNickname(nicknameRef.current);
-        // Restore the saved notifications preference (defaults to the in-code flag).
-        const savedNotif = await AsyncStorage.getItem(STORE_NOTIF);
-        const notifEnabled = savedNotif == null ? NOTIFICATIONS_ENABLED : savedNotif === '1';
+        // Restore the saved notification preferences (default to the in-code flags).
+        const [savedNotif, savedPub] = await AsyncStorage.multiGet([STORE_NOTIF, STORE_PUBLIC_NOTIF]);
+        const notifEnabled = savedNotif[1] == null ? NOTIFICATIONS_ENABLED : savedNotif[1] === '1';
+        const pubEnabled = savedPub[1] == null ? PUBLIC_NOTIFICATIONS_ENABLED : savedPub[1] === '1';
         await MeshSdk.setNotificationsEnabled(notifEnabled);
-        if (mounted) setState((s) => ({ ...s, notificationsEnabled: notifEnabled }));
+        await MeshSdk.setPublicNotificationsEnabled(pubEnabled);
+        if (mounted) setState((s) => ({ ...s, notificationsEnabled: notifEnabled, publicNotificationsEnabled: pubEnabled }));
         await MeshSdk.startServices();
         const myPeerID = await MeshSdk.getMyPeerID();
         const peers = await MeshSdk.getPeers();
@@ -253,11 +261,18 @@ export function useMesh(initialNickname: string) {
 
   // ---- Actions -----------------------------------------------------------
 
-  /** Toggle local notifications; persists the choice and updates the SDK. */
+  /** Toggle DM notifications; persists the choice and updates the SDK. */
   const setNotificationsEnabled = useCallback(async (enabled: boolean) => {
     setState((s) => ({ ...s, notificationsEnabled: enabled }));
     await AsyncStorage.setItem(STORE_NOTIF, enabled ? '1' : '0').catch(() => {});
     await MeshSdk.setNotificationsEnabled(enabled).catch(() => {});
+  }, []);
+
+  /** Toggle public-broadcast notifications; persists the choice and updates the SDK. */
+  const setPublicNotificationsEnabled = useCallback(async (enabled: boolean) => {
+    setState((s) => ({ ...s, publicNotificationsEnabled: enabled }));
+    await AsyncStorage.setItem(STORE_PUBLIC_NOTIF, enabled ? '1' : '0').catch(() => {});
+    await MeshSdk.setPublicNotificationsEnabled(enabled).catch(() => {});
   }, []);
 
   /** Wipe the persisted + in-memory history (e.g. a "clear chat" action). */
@@ -337,5 +352,5 @@ export function useMesh(initialNickname: string) {
     await MeshSdk.sendReadReceipt(messageID, peerID, nicknameRef.current);
   }, []);
 
-  return { state, sendPublic, sendPrivate, setNickname, markRead, warmUpSession, clearHistory, setNotificationsEnabled };
+  return { state, sendPublic, sendPrivate, setNickname, markRead, warmUpSession, clearHistory, setNotificationsEnabled, setPublicNotificationsEnabled };
 }

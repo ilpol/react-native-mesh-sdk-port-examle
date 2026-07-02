@@ -13,8 +13,10 @@ bitchat‑ios apps:
 - **Persistent history** — messages are saved with AsyncStorage and rehydrated on
   launch (the SDK/Core is ephemeral, so the app owns storage). "clear history"
   in the debug panel wipes it.
-- **Notifications toggle** — an on/off switch in the drawer for incoming‑DM
-  notifications (persisted between launches)
+- **Notification toggles** — drawer switches for DM notifications and (opt‑in)
+  public‑broadcast notifications, persisted between launches
+- **iOS keyboard handling** — input lifts above the keyboard and a "hide
+  keyboard" affordance (iOS has no dismiss key)
 - **Bluetooth banner** — a tap‑to‑enable prompt when Bluetooth is off
 - **Private network** — runs on its own BLE UUID pair via `MeshSdk.setMeshId`,
   isolated from other deployments
