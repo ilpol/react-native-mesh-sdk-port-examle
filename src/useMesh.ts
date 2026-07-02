@@ -7,6 +7,13 @@ import {
   type BluetoothState,
 } from 'react-native-mesh-sdk';
 
+// This example runs on its OWN mesh network — a custom BLE service/characteristic
+// UUID pair, distinct from the SDK default. Every device running this app shares
+// it, and it stays isolated from any other react-native-mesh-sdk app. Demonstrates
+// MeshSdk.setMeshId(). ("4D455348" = "MESH" in ASCII.)
+const MESH_SERVICE_UUID = '4D455348-0000-4000-8000-00000000C0DE';
+const MESH_CHARACTERISTIC_UUID = '4D455348-0000-4000-8000-00000000DA7A';
+
 /**
  * Requests the runtime Bluetooth/location permissions Core BitChat needs.
  * No-op on iOS (handled via Info.plist usage strings + system prompt).
@@ -132,6 +139,8 @@ export function useMesh(initialNickname: string) {
           if (mounted) setState((s) => ({ ...s, debug: 'PERMISSIONS DENIED' }));
           return;
         }
+        // Pick our own mesh network BEFORE anything starts the BLE stack.
+        await MeshSdk.setMeshId(MESH_SERVICE_UUID, MESH_CHARACTERISTIC_UUID);
         await MeshSdk.setNickname(nicknameRef.current);
         await MeshSdk.startServices();
         const myPeerID = await MeshSdk.getMyPeerID();
