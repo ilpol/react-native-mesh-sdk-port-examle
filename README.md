@@ -74,9 +74,20 @@ are in the library's
 [README → iOS integration](https://github.com/ilpol/react-native-mesh-sdk-port#ios-integration).
 Re‑run `npm run setup-ios` after upgrading the SDK.
 
+> ⚠️ **Don't run the official BitChat app at the same time as this example on the
+> same device.** Both drive a BLE mesh and contend for the one Bluetooth radio —
+> running them together destabilizes connections and can break the Noise handshake
+> (private messages silently fail while public still works). Quit official BitChat
+> while testing.
+
 ---
 
 ## Troubleshooting (macOS)
+
+### Peers connect but private messages don't arrive
+
+Almost always BLE radio contention — quit the **official BitChat** app if it's
+running on either device (see the warning above), then restart both apps.
 
 ### Android Studio can't find `node` (nvm users)
 
